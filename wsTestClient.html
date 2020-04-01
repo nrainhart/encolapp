@@ -1,0 +1,21 @@
+<!DOCTYPE HTML>
+
+<html>
+<head>
+
+    <script>
+        const ws = new WebSocket("ws://localhost:8080/aula/eventos");
+
+        ws.onopen = () => {
+            ws.send("Ping");
+        };
+
+        ws.onmessage = (event) => {
+            console.log("From Server:" + event.data);
+        };
+
+        //ws.close();
+    </script>
+
+</head>
+</html>

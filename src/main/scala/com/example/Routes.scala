@@ -1,17 +1,22 @@
 package com.example
 
 import akka.NotUsed
-import akka.actor.Cancellable
 import akka.actor.typed.scaladsl.ActorContext
-import akka.actor.typed.{ActorRef, ActorSystem}
 import akka.actor.typed.scaladsl.AskPattern._
+import akka.actor.typed.{ActorRef, ActorSystem}
+import akka.http.scaladsl.marshalling.sse.EventStreamMarshalling._
 import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.sse.ServerSentEvent
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.stream.OverflowStrategy
-import akka.stream.scaladsl.{BroadcastHub, Flow, Sink, Source, SourceQueueWithComplete}
+import akka.stream.scaladsl.{Flow, Sink, Source, SourceQueueWithComplete}
 import akka.util.Timeout
+import ch.megard.akka.http.cors.scaladsl.CorsDirectives._
+import ch.megard.akka.http.cors.scaladsl.model.HttpOriginMatcher
+import ch.megard.akka.http.cors.scaladsl.settings.CorsSettings
+import concurrent.duration._
 
 import scala.util.{Failure, Success}
 
@@ -27,22 +32,24 @@ class Routes(context: ActorContext[Nothing]) {
   val (sourceQueueEventos, sourceEventos): (SourceQueueWithComplete[Evento], Source[Evento, NotUsed]) =
     Source.queue[Evento](Integer.MAX_VALUE, OverflowStrategy.dropTail)
       .preMaterialize()
+  sourceEventos.runWith(Sink.ignore) // Necessary to prevent the stream from closing?
 
   val aulaActor: ActorRef[Evento] = context.spawn(new AulaActor(sourceQueueEventos).actor(), "AulaActor")
   context.watch(aulaActor)
-
-  private val serializarEvento: Evento => TextMessage = evento => TextMessage(evento.toString)
-  private val source: Source[TextMessage, NotUsed] = sourceEventos.map {serializarEvento}
-  private val wsHandler: Flow[Message, Message, Any] = Flow.fromSinkAndSource(Sink.ignore, source)
-
-  import concurrent.duration._
-  system.scheduler.scheduleAtFixedRate(0.second, 2.second)(() => sourceQueueEventos.offer(Entro(Alumno("Pepe"))))(system.executionContext)
 
   val routes: Route =
     pathPrefix("aula") {
       concat(
         path("eventos") {
-          handleWebSocketMessages(wsHandler)
+          get {
+            cors(CorsSettings.defaultSettings.withAllowedOrigins(HttpOriginMatcher.*)) {
+              complete {
+                sourceEventos
+                  .map(evento => ServerSentEvent(evento.toString))
+                  .keepAlive(1.second, () => ServerSentEvent.heartbeat)
+              }
+            }
+          }
         },
         path("participantes") {
           concat(
@@ -78,7 +85,7 @@ class Routes(context: ActorContext[Nothing]) {
         },
         pathEnd {
           get {
-            onComplete (aulaActor.ask(EstadoActual)) {
+            onComplete(aulaActor.ask(EstadoActual)) {
               case Success(aula) => complete(aula)
               case Failure(exception) => complete(exception)
             }

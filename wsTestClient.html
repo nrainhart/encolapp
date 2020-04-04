@@ -1,20 +1,14 @@
 <!DOCTYPE HTML>
-
-<html>
+<html lang="en">
 <head>
 
+    <title>WS Test Client</title>
+
     <script>
-        const ws = new WebSocket("ws://localhost:8080/aula/eventos");
-
-        ws.onopen = () => {
-            ws.send("Ping");
-        };
-
-        ws.onmessage = (event) => {
-            console.log("From Server:" + event.data);
-        };
-
-        //ws.close();
+        const eventSource = new EventSource("http://localhost:8080/aula/eventos", {withCredentials: true});
+        eventSource.onmessage = (event) => {
+            console.log(event.data)
+        }
     </script>
 
 </head>

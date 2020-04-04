@@ -32,11 +32,9 @@ class Routes(context: ActorContext[Nothing]) {
   context.watch(aulaActor)
 
   private val serializarEvento: Evento => TextMessage = evento => TextMessage(evento.toString)
-  private val source: Source[TextMessage, NotUsed] = sourceEventos.map {serializarEvento}
-  private val wsHandler: Flow[Message, Message, Any] = Flow.fromSinkAndSource(Sink.ignore, source)
-
-  import concurrent.duration._
-  system.scheduler.scheduleAtFixedRate(0.second, 2.second)(() => sourceQueueEventos.offer(Entro(Alumno("Pepe"))))(system.executionContext)
+  private val wsSource: Source[TextMessage, NotUsed] = sourceEventos.map {serializarEvento}
+  wsSource.runWith(Sink.ignore) // Necessary to prevent the stream from closing?
+  private val wsHandler: Flow[Message, Message, Any] = Flow.fromSinkAndSource(Sink.ignore, wsSource)
 
   val routes: Route =
     pathPrefix("aula") {

@@ -15,36 +15,41 @@ case class Aula(
   def quitarInteresado(alumno: Alumno): Aula = copy(interesados = interesados.filterNot(_ == alumno))//TODO validar que esté como participante
 }
 
+case class AulaVersionada(aula: Aula, version: Int)
+
 sealed trait EventoEntrada
 sealed trait EventoSalida
 final case class Entro(alumno: Alumno) extends EventoEntrada with EventoSalida
 final case class Salio(alumno: Alumno) extends EventoEntrada with EventoSalida
 final case class QuiereHablar(alumno: Alumno) extends EventoEntrada with EventoSalida
 final case class YaNoQuiereHablar(alumno: Alumno) extends EventoEntrada with EventoSalida
-final case class EstadoActual(replyTo: ActorRef[Aula]) extends EventoEntrada
+final case class EstadoActual(replyTo: ActorRef[AulaVersionada]) extends EventoEntrada
 
-class AulaActor(private val publicadorDeEventos: SourceQueueWithComplete[EventoSalida]) {//TODO renombrar a AulaActorCreator?
-  def actor(): Behavior[EventoEntrada] = registry(Aula())
+case class EventoVersionado(evento: EventoSalida, version: Int)
 
-  private def registry(aula: Aula): Behavior[EventoEntrada] =
+class AulaActor(private val publicadorDeEventos: SourceQueueWithComplete[EventoVersionado]) {//TODO renombrar a AulaActorCreator?
+  def actor(): Behavior[EventoEntrada] = registry(AulaVersionada(Aula(), 0))
+
+  private def registry(aulaVersionada: AulaVersionada): Behavior[EventoEntrada] =
     Behaviors.receiveMessage { eventoEntrada =>
-      def publicarEvento(eventoSalida: EventoSalida) = publicadorDeEventos.offer(eventoSalida)
+      val versionActualizada = aulaVersionada.version + 1
+      def publicarEvento(eventoVersionado: EventoVersionado) = publicadorDeEventos.offer(eventoVersionado)
 
       eventoEntrada match {
         case evento @ Entro(alumno) =>
-          publicarEvento(evento)
-          registry(aula.agregarParticipante(alumno))
+          publicarEvento(EventoVersionado(evento, versionActualizada))
+          registry(AulaVersionada(aulaVersionada.aula.agregarParticipante(alumno), versionActualizada))
         case evento @ Salio(alumno) =>
-          publicarEvento(evento)
-          registry(aula.quitarParticipante(alumno))
+          publicarEvento(EventoVersionado(evento, versionActualizada))
+          registry(AulaVersionada(aulaVersionada.aula.quitarParticipante(alumno), versionActualizada))
         case evento @ QuiereHablar(alumno) =>
-          publicarEvento(evento)
-          registry(aula.agregarInteresado(alumno))
+          publicarEvento(EventoVersionado(evento, versionActualizada))
+          registry(AulaVersionada(aulaVersionada.aula.agregarInteresado(alumno), versionActualizada))
         case evento @ YaNoQuiereHablar(alumno) =>
-          publicarEvento(evento)
-          registry(aula.quitarInteresado(alumno))
+          publicarEvento(EventoVersionado(evento, versionActualizada))
+          registry(AulaVersionada(aulaVersionada.aula.quitarInteresado(alumno), versionActualizada))
         case EstadoActual(replyTo) =>
-          replyTo ! aula
+          replyTo ! aulaVersionada
           Behaviors.same
       }
     }

@@ -31,4 +31,7 @@ object JsonFormats  {
         case Seq(JsString("YaNoQuiereHablar")) => json.convertTo[YaNoQuiereHablar]
       }
   }
+
+  implicit val aulaVersionadaFormat = jsonFormat2(AulaVersionada)
+  implicit val eventoVersionadoFormat = jsonFormat2(EventoVersionado)
 }

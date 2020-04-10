@@ -31,14 +31,14 @@ class Routes(context: ActorContext[Nothing]) {
   val aulas: mutable.Map[String, (ActorRef[EventoEntrada], Flow[Message, Message, Any])] = mutable.Map.empty
 
   def createAulaActor(): (ActorRef[EventoEntrada], Flow[Message, Message, Any]) = {
-    val (sourceQueueEventos, sourceEventos): (SourceQueueWithComplete[EventoSalida], Source[EventoSalida, NotUsed]) =
-      Source.queue[EventoSalida](Integer.MAX_VALUE, OverflowStrategy.dropTail)
+    val (sourceQueueEventos, sourceEventos): (SourceQueueWithComplete[EventoVersionado], Source[EventoVersionado, NotUsed]) =
+      Source.queue[EventoVersionado](Integer.MAX_VALUE, OverflowStrategy.dropTail)
         .preMaterialize()
 
     val aulaActor: ActorRef[EventoEntrada] = context.spawn(new AulaActor(sourceQueueEventos).actor(), "AulaActor")
     context.watch(aulaActor)
 
-    val serializarEvento: EventoSalida => TextMessage = evento => TextMessage(evento.toJson.toString())
+    val serializarEvento: EventoVersionado => TextMessage = evento => TextMessage(evento.toJson.toString())
     val wsSource: Source[TextMessage, NotUsed] = sourceEventos.map {serializarEvento}
     wsSource.runWith(Sink.ignore) // Necessary to prevent the stream from closing
     val wsHandler: Flow[Message, Message, Any] = Flow.fromSinkAndSource(Sink.ignore, wsSource)
@@ -97,7 +97,7 @@ class Routes(context: ActorContext[Nothing]) {
           pathEnd {
             get {
               onComplete (aulaActor.ask(EstadoActual)) {
-                case Success(aula) => complete(aula)
+                case Success(aulaVersionada) => complete(aulaVersionada)
                 case Failure(exception) => complete(exception)
               }
             }

@@ -4,13 +4,16 @@ import akka.NotUsed
 import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.actor.typed.{ActorRef, ActorSystem}
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.{HttpMethods, StatusCodes}
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.stream.OverflowStrategy
 import akka.stream.scaladsl.{Flow, Sink, Source, SourceQueueWithComplete}
 import akka.util.Timeout
+import ch.megard.akka.http.cors.scaladsl.CorsDirectives._
+import ch.megard.akka.http.cors.scaladsl.model.HttpOriginMatcher
+import ch.megard.akka.http.cors.scaladsl.settings.CorsSettings
 
 import scala.collection.mutable
 import scala.util.{Failure, Success}
@@ -36,7 +39,7 @@ class Routes(context: ActorContext[Nothing]) {
 
     val serializarEvento: Evento => TextMessage = evento => TextMessage(evento.toString)
     val wsSource: Source[TextMessage, NotUsed] = sourceEventos.map {serializarEvento}
-    wsSource.runWith(Sink.ignore) // Necessary to prevent the stream from closing?
+    wsSource.runWith(Sink.ignore) // Necessary to prevent the stream from closing
     val wsHandler: Flow[Message, Message, Any] = Flow.fromSinkAndSource(Sink.ignore, wsSource)
     (aulaActor, wsHandler)
   }
@@ -46,53 +49,59 @@ class Routes(context: ActorContext[Nothing]) {
   def aulaActorPara(nombreAula: String): (ActorRef[Evento], Flow[Message, Message, Any]) =
     aulas.getOrElse(nombreAula, throw new RuntimeException(s"No se pudo encontrar el aula $nombreAula"))//TODO debería devolver 404
 
+  private val corsConfiguration: CorsSettings = CorsSettings.defaultSettings
+    .withAllowedOrigins(HttpOriginMatcher.*)
+    .withAllowedMethods(List(HttpMethods.POST, HttpMethods.GET, HttpMethods.DELETE))
+
   val routes: Route =
-    pathPrefix("aula" / Segment) { nombreAula =>
-      val (aulaActor, wsHandler) = aulaActorPara(nombreAula)
-      concat(
-        path("eventos") {
-          handleWebSocketMessages(wsHandler)
-        },
-        path("participantes") {
-          concat(
-            post {
-              entity(as[Alumno]) { alumno =>
-                aulaActor.tell(Entro(alumno))
-                complete(StatusCodes.OK)
+    cors(corsConfiguration) {
+      pathPrefix("aula" / Segment) { nombreAula =>
+        val (aulaActor, wsHandler) = aulaActorPara(nombreAula)
+        concat(
+          path("eventos") {
+            handleWebSocketMessages(wsHandler)
+          },
+          path("participantes") {
+            concat(
+              post {
+                entity(as[Alumno]) { alumno =>
+                  aulaActor.tell(Entro(alumno))
+                  complete(StatusCodes.OK)
+                }
+              },
+              delete {
+                entity(as[Alumno]) { alumno =>
+                  aulaActor.tell(Salio(alumno))
+                  complete(StatusCodes.OK)
+                }
               }
-            },
-            delete {
-              entity(as[Alumno]) { alumno =>
-                aulaActor.tell(Salio(alumno))
-                complete(StatusCodes.OK)
+            )
+          },
+          path("interesados") {
+            concat(
+              post {
+                entity(as[Alumno]) { alumno =>
+                  aulaActor.tell(QuiereHablar(alumno))
+                  complete(StatusCodes.OK)
+                }
+              },
+              delete {
+                entity(as[Alumno]) { alumno =>
+                  aulaActor.tell(YaNoQuiereHablar(alumno))
+                  complete(StatusCodes.OK)
+                }
               }
-            }
-          )
-        },
-        path("interesados") {
-          concat(
-            post {
-              entity(as[Alumno]) { alumno =>
-                aulaActor.tell(QuiereHablar(alumno))
-                complete(StatusCodes.OK)
+            )
+          },
+          pathEnd {
+            get {
+              onComplete (aulaActor.ask(EstadoActual)) {
+                case Success(aula) => complete(aula)
+                case Failure(exception) => complete(exception)
               }
-            },
-            delete {
-              entity(as[Alumno]) { alumno =>
-                aulaActor.tell(YaNoQuiereHablar(alumno))
-                complete(StatusCodes.OK)
-              }
-            }
-          )
-        },
-        pathEnd {
-          get {
-            onComplete (aulaActor.ask(EstadoActual)) {
-              case Success(aula) => complete(aula)
-              case Failure(exception) => complete(exception)
             }
           }
-        }
-      )
+        )
+      }
     }
 }

@@ -35,7 +35,7 @@ class Routes(context: ActorContext[Nothing]) {
       Source.queue[EventoVersionado](Integer.MAX_VALUE, OverflowStrategy.dropTail)
         .preMaterialize()
 
-    val aulaActor: ActorRef[EventoEntrada] = context.spawn(new AulaActor(sourceQueueEventos).actor(), "AulaActor")
+    val aulaActor: ActorRef[EventoEntrada] = context.spawn(new AulaActor(sourceQueueEventos).behavior(), "AulaActor")
     context.watch(aulaActor)
 
     val serializarEvento: EventoVersionado => TextMessage = evento => TextMessage(evento.toJson.toString())

@@ -17,16 +17,12 @@ object JsonFormats  {
   implicit val eventoSalidaFormat = new RootJsonFormat[EventoSalida] {
     def write(obj: EventoSalida): JsValue =
       JsObject((obj match {
-        case e: Entro => e.toJson
-        case s: Salio => s.toJson
         case s: QuiereHablar => s.toJson
         case s: YaNoQuiereHablar => s.toJson
       }).asJsObject.fields  + ("type" -> JsString(obj.getClass.getSimpleName)))
 
     def read(json: JsValue): EventoSalida =
       json.asJsObject.getFields("type") match {
-        case Seq(JsString("Entro")) => json.convertTo[Entro]
-        case Seq(JsString("Salio")) => json.convertTo[Salio]
         case Seq(JsString("QuiereHablar")) => json.convertTo[QuiereHablar]
         case Seq(JsString("YaNoQuiereHablar")) => json.convertTo[YaNoQuiereHablar]
       }
